@@ -1,0 +1,25 @@
+# Ignora o ambiente virtual local
+.venv/
+venv/
+
+# Ignora arquivos compilados do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignora notebooks temporários
+.ipynb_checkpoints/
+
+# Ignora arquivos de log e outros temporários
+*.log
+*.tmp
+*.swp
+*.bak
+*.DS_Store
+
+# Ignora arquivos de cache do Jupyter
+*.nbconvert.ipynb
+
+# Ignora diretórios ocultos de IDEs
+.vscode/
+.idea/

@@ -1,221 +1,281 @@
 import re
-from itertools import combinations
+import itertools
 import numpy as np
+from collections import defaultdict, deque
 
+def carregar_instancia(caminho):
+    with open(caminho, 'r') as f:
+        linhas = f.readlines()
 
-class GrafoProcessor:
-    def __init__(self, arquivo_path):
-        self.arquivo_path = arquivo_path
-        self.info = {}
-        self.nos = {}
-        self.arestas_obrig = []
-        self.arestas_opcionais = []
-        self.arcos_obrig = []
-        self.arcos_opcionais = []
-        self.total_nos = 0
+    grafo = {}
+    vertices = {}
+    obrigatorias = []
+    opcionais = []
+    arcos_req = []
+    arcos_opc = []
 
-    def processar_arquivo(self):
-        self._extrair_metadados()
-        self._processar_conteudo()
-        self._organizar_dados()
-        return self.info, self.total_nos
+    padroes = {
+        'nome': r'Name:\s+(\S+)',
+        'valor_otimo': r'Optimal value:\s+(-?\d+)',
+        'veiculos': r'#Vehicles:\s+(-?\d+)',
+        'capacidade': r'Capacity:\s+(\d+)',
+        'deposito': r'Depot Node:\s+(\d+)',
+        'num_vertices': r'#Nodes:\s+(\d+)',
+        'num_arestas': r'#Edges:\s+(\d+)',
+        'num_arcos': r'#Arcs:\s+(\d+)',
+        'vertices_req': r'#Required N:\s+(\d+)',
+        'arestas_req': r'#Required E:\s+(\d+)',
+        'arcos_req': r'#Required A:\s+(\d+)',
+    }
 
-    def _extrair_metadados(self):
-        padroes = {
-            'nome': r'Nome:\s+(\S+)',
-            'valor_otimo': r'Valor ótimo:\s+(-?\d+)',
-            'veiculos': r'Veículos:\s+(-?\d+)',
-            'capacidade': r'Capacidade:\s+(\d+)',
-            'deposito': r'Depósito:\s+(\d+)',
-            'nos': r'Nós:\s+(\d+)',
-            'arestas': r'Arestas:\s+(\d+)',
-            'arcos': r'Arcos:\s+(\d+)',
-            'nos_obrig': r'Nós obrigatórios:\s+(\d+)',
-            'arestas_obrig': r'Arestas obrigatórias:\s+(\d+)',
-            'arcos_obrig': r'Arcos obrigatórios:\s+(\d+)'
-        }
+    for linha in linhas:
+        for chave, regex in padroes.items():
+            match = re.search(regex, linha)
+            if match:
+                valor = match.group(1)
+                grafo[chave] = int(valor) if valor.isdigit() or valor.startswith('-') else valor
 
-        with open(self.arquivo_path, 'r') as f:
-            for linha in f:
-                for chave, padrao in padroes.items():
-                    match = re.search(padrao, linha)
-                    if match:
-                        valor = match.group(1)
-                        self.info[chave] = int(valor) if valor.isdigit() else valor
+    n = grafo.get('num_vertices', 0)
 
-        self.total_nos = self.info.get('nos', 0)
+    lendo = {
+        'vertices': False,
+        'arestas_req': False,
+        'arestas_opc': False,
+        'arcos_req': False,
+        'arcos_opc': False,
+    }
 
-    def _processar_conteudo(self):
-        secao_atual = None
-        
-        with open(self.arquivo_path, 'r') as f:
-            for linha in f:
-                linha = linha.strip()
-                
-                if linha.startswith('ReN.'):
-                    secao_atual = 'nos'
-                elif linha.startswith('ReE.'):
-                    secao_atual = 'arestas_obrig'
-                elif linha.startswith('ReA.'):
-                    secao_atual = 'arcos_obrig'
-                elif linha.startswith('EDGE'):
-                    secao_atual = 'arestas_opcionais'
-                elif linha.startswith('ARC'):
-                    secao_atual = 'arcos_opcionais'
-                elif not linha:
-                    continue
-                else:
-                    self._processar_linha(linha, secao_atual)
+    for linha in linhas:
+        linha = linha.strip()
 
-    def _processar_linha(self, linha, secao):
-        partes = linha.split()
-        
-        if secao == 'nos' and len(partes) == 3:
-            id_no = int(partes[0][1:])
-            self.nos[id_no] = {
-                'demanda': int(partes[1]),
-                'custo': int(partes[2])
+        if linha.startswith('ReN.'):
+            lendo = {chave: False for chave in lendo}
+            lendo['vertices'] = True
+            continue
+        elif linha.startswith('ReE.'):
+            lendo = {chave: False for chave in lendo}
+            lendo['arestas_req'] = True
+            continue
+        elif linha.startswith('EDGE'):
+            lendo = {chave: False for chave in lendo}
+            lendo['arestas_opc'] = True
+            continue
+        elif linha.startswith('ReA.'):
+            lendo = {chave: False for chave in lendo}
+            lendo['arcos_req'] = True
+            continue
+        elif linha.startswith('ARC'):
+            lendo = {chave: False for chave in lendo}
+            lendo['arcos_opc'] = True
+            continue
+
+        dados = linha.split()
+
+        if lendo['vertices'] and len(dados) == 3:
+            id_v = int(dados[0][1:])
+            vertices[id_v] = {
+                'demanda': int(dados[1]),
+                'custo_servico': int(dados[2])
             }
-            
-        elif secao == 'arestas_obrig' and len(partes) == 6:
-            self.arestas_obrig.append((
-                int(partes[1]), int(partes[2]),
-                int(partes[3]), int(partes[4]),
-                int(partes[5])
-            ))
-            
-        elif secao == 'arestas_opcionais' and len(partes) == 4:
-            self.arestas_opcionais.append((
-                int(partes[1]), int(partes[2]),
-                int(partes[3])
-            ))
-            
-        elif secao == 'arcos_obrig' and len(partes) == 6:
-            self.arcos_obrig.append((
-                int(partes[1]), int(partes[2]),
-                int(partes[3]), int(partes[4]),
-                int(partes[5])
-            ))
-            
-        elif secao == 'arcos_opcionais' and len(partes) == 4:
-            self.arcos_opcionais.append((
-                int(partes[1]), int(partes[2]),
-                int(partes[3])
-            ))
 
-    def _organizar_dados(self):
-        self.info.update({
-            'nos': self.nos,
-            'arestas_obrig': self.arestas_obrig,
-            'arestas_opcionais': self.arestas_opcionais,
-            'arcos_obrig': self.arcos_obrig,
-            'arcos_opcionais': self.arcos_opcionais
-        })
+        elif lendo['arestas_req'] and len(dados) == 6:
+            origem, destino = int(dados[1]), int(dados[2])
+            custo, dem, serv = map(int, dados[3:])
+            obrigatorias.append((origem, destino, custo, dem, serv))
 
+        elif lendo['arestas_opc'] and len(dados) == 4:
+            origem, destino, custo = int(dados[1]), int(dados[2]), int(dados[3])
+            opcionais.append((origem, destino, custo))
 
-class AnalisadorGrafo:
-    @staticmethod
-    def calcular_distancias(grafo, n_nos):
-        INF = float('inf')
-        dist = [[INF] * n_nos for _ in range(n_nos)]
-        prox = [[-1] * n_nos for _ in range(n_nos)]
-        
-        for i in range(n_nos):
-            dist[i][i] = 0
+        elif lendo['arcos_req'] and len(dados) == 6:
+            origem, destino = int(dados[1]), int(dados[2])
+            custo, dem, serv = map(int, dados[3:])
+            arcos_req.append((origem, destino, custo, dem, serv))
 
-        for aresta in grafo['arestas_obrig'] + grafo['arestas_opcionais']:
-            origem, destino, custo = aresta[:3]
-            origem_idx = origem - 1
-            destino_idx = destino - 1
-            dist[origem_idx][destino_idx] = custo
-            dist[destino_idx][origem_idx] = custo
-            prox[origem_idx][destino_idx] = destino_idx
-            prox[destino_idx][origem_idx] = origem_idx
+        elif lendo['arcos_opc'] and len(dados) == 4:
+            origem, destino, custo = int(dados[1]), int(dados[2]), int(dados[3])
+            arcos_opc.append((origem, destino, custo))
 
-        for k in range(n_nos):
-            for i in range(n_nos):
-                for j in range(n_nos):
-                    if dist[i][k] + dist[k][j] < dist[i][j]:
-                        dist[i][j] = dist[i][k] + dist[k][j]
-                        prox[i][j] = prox[i][k]
+    grafo['vertices'] = vertices
+    grafo['arestas_req'] = obrigatorias
+    grafo['arestas_opc'] = opcionais
+    grafo['arcos_req'] = arcos_req
+    grafo['arcos_opc'] = arcos_opc
 
-        return dist, prox
+    return grafo, n
 
-    @staticmethod
-    def calcular_centralidade(dados, n_nos):
-        dist, prox = AnalisadorGrafo.calcular_distancias(dados, n_nos)
-        betweenness = {i: 0 for i in range(1, n_nos + 1)}
-        
-        for u, v in combinations(range(n_nos), 2):
-            if dist[u][v] == float('inf'):
+def floyd_warshall(grafo, n_vertices):
+    INF = float('inf')
+    dist = [[INF] * n_vertices for _ in range(n_vertices)]
+    pred = [[-1] * n_vertices for _ in range(n_vertices)]
+    
+    for i in range(n_vertices):
+        dist[i][i] = 0
+    
+    # Preencher com arestas existentes
+    for u, v, custo, *_ in grafo['arestas_req'] + grafo['arestas_opc']:
+        dist[u-1][v-1] = custo
+        dist[v-1][u-1] = custo
+        pred[u-1][v-1] = u-1
+        pred[v-1][u-1] = v-1
+    
+    for u, v, custo, *_ in grafo['arcos_req'] + grafo['arcos_opc']:
+        dist[u-1][v-1] = custo
+        pred[u-1][v-1] = u-1
+    
+    # Algoritmo principal
+    for k in range(n_vertices):
+        for i in range(n_vertices):
+            for j in range(n_vertices):
+                if dist[i][k] + dist[k][j] < dist[i][j]:
+                    dist[i][j] = dist[i][k] + dist[k][j]
+                    pred[i][j] = pred[k][j]
+    
+    return dist, pred
+
+def componentes_conexos(grafo, n_vertices):
+    # Construir lista de adjacência
+    adj = defaultdict(list)
+    for u, v, *_ in grafo['arestas_req'] + grafo['arestas_opc']:
+        adj[u].append(v)
+        adj[v].append(u)
+    for u, v, *_ in grafo['arcos_req'] + grafo['arcos_opc']:
+        adj[u].append(v)
+    
+    visitados = set()
+    componentes = []
+    
+    for v in range(1, n_vertices + 1):
+        if v not in visitados:
+            # BFS para encontrar componente conexo
+            fila = deque([v])
+            componente = set()
+            while fila:
+                node = fila.popleft()
+                if node not in visitados:
+                    visitados.add(node)
+                    componente.add(node)
+                    for vizinho in adj.get(node, []):
+                        if vizinho not in visitados:
+                            fila.append(vizinho)
+            if componente:
+                componentes.append(componente)
+    
+    return componentes
+
+def calcular_intermediacao(grafo, n_vertices):
+    dist, _ = floyd_warshall(grafo, n_vertices)
+    intermediacao = {v: 0 for v in range(1, n_vertices + 1)}
+    INF = float('inf')
+    
+    for s in range(n_vertices):
+        for t in range(n_vertices):
+            if s == t or dist[s][t] == INF:
                 continue
-                
-            caminho = []
-            atual = u
-            while atual != v:
-                caminho.append(atual + 1)
-                atual = prox[atual][v]
-            caminho.append(v + 1)
-            
-            for no in caminho[1:-1]:
-                betweenness[no] += 1
-                
-        return betweenness
+            # Encontrar todos os caminhos mínimos entre s e t
+            caminhos = encontrar_caminhos_minimos(grafo, s+1, t+1, dist)
+            for caminho in caminhos:
+                for node in caminho[1:-1]:  # Excluir origem e destino
+                    intermediacao[node] += 1
+    
+    # Normalizar
+    total_pares = n_vertices * (n_vertices - 1)
+    if total_pares > 0:
+        for v in intermediacao:
+            intermediacao[v] /= total_pares
+    
+    return intermediacao
 
-    @staticmethod
-    def calcular_metricas(matriz_dist):
-        diametro = 0
-        soma_distancias = 0
-        contagem = 0
-        
-        for i in range(len(matriz_dist)):
-            for j in range(len(matriz_dist)):
-                if i != j and matriz_dist[i][j] != float('inf'):
-                    diametro = max(diametro, matriz_dist[i][j])
-                    soma_distancias += matriz_dist[i][j]
-                    contagem += 1
-                    
-        caminho_medio = soma_distancias / contagem if contagem else float('inf')
-        return diametro, caminho_medio
+def encontrar_caminhos_minimos(grafo, origem, destino, dist):
+    # Implementação simplificada para encontrar um caminho mínimo
+    # Em uma implementação real, precisaríamos de um algoritmo mais completo
+    caminhos = []
+    n_vertices = len(dist)
+    INF = float('inf')
+    
+    if dist[origem-1][destino-1] == INF:
+        return caminhos
+    
+    # Usando DFS para encontrar um caminho mínimo
+    pilha = [(origem, [origem])]
+    while pilha:
+        node, caminho = pilha.pop()
+        if node == destino:
+            caminhos.append(caminho)
+            continue
+        for v in range(1, n_vertices + 1):
+            if v != node and dist[node-1][v-1] + dist[v-1][destino-1] == dist[node-1][destino-1]:
+                if v not in caminho:
+                    pilha.append((v, caminho + [v]))
+    
+    return caminhos
 
-    @staticmethod
-    def gerar_relatorio(dados, n_nos):
-        relatorio = {}
-        
-        # Cálculos básicos
-        relatorio["Vértices totais"] = n_nos
-        relatorio["Arestas"] = dados.get('arestas', 0)
-        relatorio["Arcos"] = dados.get('arcos', 0)
-        relatorio["Vértices obrigatórios"] = dados.get('nos_obrig', 0)
-        relatorio["Arestas obrigatórias"] = len(dados['arestas_obrig'])
-        relatorio["Arcos obrigatórios"] = len(dados['arcos_obrig'])
-        
-        # Cálculo de graus
-        graus = {i: 0 for i in range(1, n_nos + 1)}
-        for aresta in dados['arestas_obrig'] + dados['arestas_opcionais']:
-            graus[aresta[0]] += 1
-            graus[aresta[1]] += 1
-            
-        relatorio["Grau mínimo"] = min(graus.values()) if graus else 0
-        relatorio["Grau máximo"] = max(graus.values()) if graus else 0
-        
-        # Outras métricas
-        relatorio["Direcionado"] = bool(dados.get('arcos', 0))
-        
-        n = n_nos
-        m = relatorio["Arestas"]
-        relatorio["Densidade"] = (2 * m) / (n * (n - 1)) if n > 1 else 0
-        
-        distancias, _ = AnalisadorGrafo.calcular_distancias(dados, n_nos)
-        relatorio["Centralidade"] = AnalisadorGrafo.calcular_centralidade(dados, n_nos)
-        diametro, caminho_medio = AnalisadorGrafo.calcular_metricas(distancias)
-        relatorio["Diâmetro"] = diametro
-        relatorio["Caminho médio"] = caminho_medio
-        
-        return relatorio
+def gerar_resumo(grafo, n_vertices):
+    resumo = {
+        'vertices': n_vertices,
+        'arestas_total': grafo.get('num_arestas', 0),
+        'arcos_total': grafo.get('num_arcos', 0),
+        'vertices_req': grafo.get('vertices_req', 0),
+        'arestas_req': len(grafo['arestas_req']),
+        'arcos_req': len(grafo['arcos_req']),
+    }
 
+    graus = {i: 0 for i in range(1, n_vertices + 1)}
 
-def analisar_instancia(caminho_arquivo):
-    processor = GrafoProcessor(caminho_arquivo)
-    dados_grafo, total_nos = processor.processar_arquivo()
-    return AnalisadorGrafo.gerar_relatorio(dados_grafo, total_nos)
+    # Contabilizar graus
+    for u, v, *_ in grafo['arestas_req'] + grafo['arestas_opc']:
+        graus[u] += 1
+        graus[v] += 1
+    for u, v, *_ in grafo['arcos_req'] + grafo['arcos_opc']:
+        graus[u] += 1  # Só conta a saída para arcos direcionados
+
+    # Determinar se é direcionado
+    direcionado = (grafo.get('num_arcos', 0) > 0)
+    resumo['direcionado'] = direcionado
+
+    # Densidade
+    arestas_dir = grafo.get('num_arcos', 0) if direcionado else grafo.get('num_arestas', 0)
+    if direcionado:
+        densidade = arestas_dir / (n_vertices * (n_vertices - 1)) if n_vertices > 1 else 0
+    else:
+        densidade = (2 * arestas_dir) / (n_vertices * (n_vertices - 1)) if n_vertices > 1 else 0
+
+    resumo['densidade'] = densidade
+
+    # Grau mínimo e máximo
+    graus_lista = list(graus.values())
+    resumo['grau_minimo'] = min(graus_lista)
+    resumo['grau_maximo'] = max(graus_lista)
+    resumo['graus'] = graus
+
+    # Componentes conexos
+    componentes = componentes_conexos(grafo, n_vertices)
+    resumo['num_componentes'] = len(componentes)
+    resumo['componentes'] = componentes
+
+    # Matriz de distâncias e predecessores
+    distancias, predecessores = floyd_warshall(grafo, n_vertices)
+    resumo['distancias'] = distancias
+    resumo['predecessores'] = predecessores
+
+    # Intermediação
+    resumo['intermediacao'] = calcular_intermediacao(grafo, n_vertices)
+
+    # Caminho médio e diâmetro
+    soma_distancias = 0
+    pares_validos = 0
+    diametro = 0
+    INF = float('inf')
+    
+    for i in range(n_vertices):
+        for j in range(n_vertices):
+            if i != j and distancias[i][j] < INF:
+                soma_distancias += distancias[i][j]
+                pares_validos += 1
+                if distancias[i][j] > diametro:
+                    diametro = distancias[i][j]
+    
+    resumo['caminho_medio'] = soma_distancias / pares_validos if pares_validos > 0 else INF
+    resumo['diametro'] = diametro if pares_validos > 0 else INF
+
+    return resumo
