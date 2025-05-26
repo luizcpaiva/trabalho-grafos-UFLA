@@ -1,5 +1,4 @@
 import re
-import itertools
 import numpy as np
 from collections import defaultdict, deque
 
@@ -187,8 +186,6 @@ def calcular_intermediacao(grafo, n_vertices):
     return intermediacao
 
 def encontrar_caminhos_minimos(grafo, origem, destino, dist):
-    # Implementação simplificada para encontrar um caminho mínimo
-    # Em uma implementação real, precisaríamos de um algoritmo mais completo
     caminhos = []
     n_vertices = len(dist)
     INF = float('inf')

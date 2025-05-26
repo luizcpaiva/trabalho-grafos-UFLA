@@ -1,4 +1,4 @@
-from grafos import carregar_instancia, floyd_warshall, encontrar_caminhos_minimos 
+from grafos import  floyd_warshall, encontrar_caminhos_minimos 
 
 class GrafoCARPAdaptado:
 
